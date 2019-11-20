@@ -24,6 +24,7 @@ from .register_coco import register_coco_instances, register_coco_panoptic_separ
 from .lvis import register_lvis_instances, get_lvis_instances_meta
 from .cityscapes import load_cityscapes_instances, load_cityscapes_semantic
 from .pascal_voc import register_pascal_voc
+from .pascal_nlab import register_pascal_nlab
 from .builtin_meta import _get_builtin_metadata
 
 
@@ -208,8 +209,22 @@ def register_all_pascal_voc(root="datasets"):
         MetadataCatalog.get(name).evaluator_type = "pascal_voc"
 
 
+# ==== Predefined splits for PASCAL NLAB ===========
+def register_all_pascal_nlab(root="datasets"):
+    SPLITS = [
+        ("pascal_nlab_trainval", "PascalNLAB", "trainval"),
+        ("pascal_nlab_train", "PascalNLAB", "train"),
+        ("pascal_nlab_val", "PascalNLAB", "val"),
+        ("pascal_nlab_test", "PascalNLAB", "test")
+    ]
+    for name, dirname, split in SPLITS:
+        register_pascal_nlab(name, os.path.join(root, dirname), split)
+        MetadataCatalog.get(name).evaluator_type = "pascal_nlab"
+
+
 # Register them all under "./datasets"
 register_all_coco()
 register_all_lvis()
 register_all_cityscapes()
 register_all_pascal_voc()
+register_all_pascal_nlab()
