@@ -64,5 +64,5 @@ def load_nlab_instances(dirname: str, split: str):
 def register_pascal_nlab(name, dirname, split):
     DatasetCatalog.register(name, lambda: load_nlab_instances(dirname, split))
     MetadataCatalog.get(name).set(
-        thing_classes=CLASS_NAMES, dirname=dirname, year=2019, split=split
+        thing_classes=CLASS_NAMES, dirname=dirname, split=split
     )
