@@ -76,7 +76,7 @@ class Box2BoxTransform(object):
                 box transformations for the single box boxes[i].
             boxes (Tensor): boxes to transform, of shape (N, 4)
         """
-        assert torch.isfinite(deltas).all().item(), "Box regression deltas become infinite or NaN!"
+        # assert torch.isfinite(deltas).all().item(), "Box regression deltas become infinite or NaN!"
         boxes = boxes.to(deltas.dtype)
 
         widths = boxes[:, 2] - boxes[:, 0]
@@ -99,11 +99,24 @@ class Box2BoxTransform(object):
         pred_w = torch.exp(dw) * widths[:, None]
         pred_h = torch.exp(dh) * heights[:, None]
 
-        pred_boxes = torch.zeros_like(deltas)
-        pred_boxes[:, 0::4] = pred_ctr_x - 0.5 * pred_w  # x1
-        pred_boxes[:, 1::4] = pred_ctr_y - 0.5 * pred_h  # y1
-        pred_boxes[:, 2::4] = pred_ctr_x + 0.5 * pred_w  # x2
-        pred_boxes[:, 3::4] = pred_ctr_y + 0.5 * pred_h  # y2
+        # ONNX doesn't support in-place conversion
+        # pred_boxes = torch.zeros_like(deltas)
+        # pred_boxes[:, 0::4] = pred_ctr_x - 0.5 * pred_w  # x1
+        # pred_boxes[:, 1::4] = pred_ctr_y - 0.5 * pred_h  # y1
+        # pred_boxes[:, 2::4] = pred_ctr_x + 0.5 * pred_w  # x2
+        # pred_boxes[:, 3::4] = pred_ctr_y + 0.5 * pred_h  # y2
+        pred_boxes = torch.transpose(
+            torch.cat(
+                [
+                    pred_ctr_x - 0.5 * pred_w,
+                    pred_ctr_y - 0.5 * pred_h,
+                    pred_ctr_x + 0.5 * pred_w,
+                    pred_ctr_y + 0.5 * pred_h
+                ],
+                dim=1
+            ).reshape((deltas.size(0), 4, -1)),
+            1, 2
+        ).reshape(deltas.size(0), -1)
         return pred_boxes
 
 
