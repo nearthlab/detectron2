@@ -183,24 +183,16 @@ class NonMaxSuppressionONNX(nn.Module):
         ]
 
         # 1. Select top-k anchor for every level and every image
-        topk_scores = []  # #lvl Tensor, each of shape N x topk
+        topk_scores = []
         topk_proposals = []
-        level_ids = []  # #lvl Tensor, each of shape (topk,)
+        level_ids = []
         batch_idx = torch.arange(1, device=device) # num_images == 1
         for level_id, proposals_i, logits_i, num_proposals_i in zip(
             itertools.count(), all_proposals, all_objectness_logits, num_proposals
         ):
-            # Hi_Wi_A = logits_i.shape[1]
-            # num_proposals_i = torch.min(pre_nms_topk, Hi_Wi_A)
-
             # sort is faster than topk (https://github.com/pytorch/pytorch/issues/22812)
             # But ONNX currently supports topk but not sort.
             topk_scores_i, topk_idx = logits_i.topk(num_proposals_i, dim=1)
-            # logits_i, idx = logits_i.sort(descending=True, dim=1)
-            # # topk_scores_i = logits_i[batch_idx, :num_proposals_i]
-            # topk_scores_i = torch.index_select(logits_i[batch_idx], 0, proposal_range_i)
-            # # topk_idx = idx[batch_idx, :num_proposals_i]
-            # topk_idx = torch.index_select(idx[batch_idx], 0, proposal_range_i)
 
             # each is N x topk
             topk_proposals_i = proposals_i[batch_idx[:, None], topk_idx]  # N x topk x 4
@@ -215,10 +207,12 @@ class NonMaxSuppressionONNX(nn.Module):
         level_ids = cat(level_ids, dim=0)
 
         # 3. For each image, run a per-level NMS, and choose topk results.
-        results = []
+        box_results = []
+        score_results = []
         for n, image_size in enumerate(self.image_sizes):
             boxes = topk_proposals[n]
             scores_per_img = topk_scores[n]
+
             # boxes.clip(image_size)
             h, w = image_size
             boxes = torch.cat([
@@ -234,27 +228,15 @@ class NonMaxSuppressionONNX(nn.Module):
             heights = boxes[:, 3] - boxes[:, 1]
             keep = (widths > min_box_side_len) & (heights > min_box_side_len)
 
-            # lvl = level_ids
-            # if keep.sum().item() != len(boxes):
-            #     boxes, scores_per_img, lvl = boxes[keep], scores_per_img[keep], level_ids[keep]
             boxes, scores_per_img, lvl = boxes[keep], scores_per_img[keep], level_ids[keep]
 
             keep = batched_nms(boxes, scores_per_img, lvl, nms_thresh)
-            # In Detectron1, there was different behavior during training vs. testing.
-            # (https://github.com/facebookresearch/Detectron/issues/459)
-            # During training, topk is over the proposals from *all* images in the training batch.
-            # During testing, it is over the proposals for each image separately.
-            # As a result, the training behavior becomes batch-dependent,
-            # and the configuration "POST_NMS_TOPK_TRAIN" end up relying on the batch size.
-            # This bug is addressed in Detectron2 to make the behavior independent of batch size.
             keep = keep[:post_nms_topk]
 
-            # res = Instances(image_size)
-            # res.proposal_boxes = boxes[keep]
-            # res.objectness_logits = scores_per_img[keep]
-            # results.append(res)
-        # return results
-        return boxes[keep], scores_per_img[keep]
+            box_results.append(boxes[keep])
+            score_results.append(scores_per_img[keep])
+
+        return box_results, score_results
 
 
 if __name__ == "__main__":
@@ -369,7 +351,7 @@ if __name__ == "__main__":
                 nms, (all_proposals, all_objectness_logits), get_onnx_name('nms'), opset_version=11,
                 verbose=args.verbose, input_names=proposal_output_names + objectness_output_names
             )
-        rois = nms(all_proposals, all_objectness_logits)
+        proposals, scores = nms(all_proposals, all_objectness_logits)
 
         with torch.no_grad():
             proposals = find_top_rpn_proposals(
