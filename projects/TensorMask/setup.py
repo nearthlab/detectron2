@@ -3,9 +3,7 @@
 
 import glob
 import os
-import shutil
 from setuptools import find_packages, setup
-from typing import List
 import torch
 from torch.utils.cpp_extension import CUDA_HOME, CppExtension, CUDAExtension
 
@@ -15,7 +13,7 @@ assert torch_ver >= [1, 3], "Requires PyTorch >= 1.3"
 
 def get_extensions():
     this_dir = os.path.dirname(os.path.abspath(__file__))
-    extensions_dir = os.path.join(this_dir, "detectron2", "layers", "csrc")
+    extensions_dir = os.path.join(this_dir, "tensormask", "layers", "csrc")
 
     main_source = os.path.join(extensions_dir, "vision.cpp")
     sources = glob.glob(os.path.join(extensions_dir, "**", "*.cpp"))
@@ -24,6 +22,7 @@ def get_extensions():
     )
 
     sources = [main_source] + sources
+
     extension = CppExtension
 
     extra_compile_args = {"cxx": []}
@@ -45,11 +44,13 @@ def get_extensions():
         if CC is not None:
             extra_compile_args["nvcc"].append("-ccbin={}".format(CC))
 
+    sources = [os.path.join(extensions_dir, s) for s in sources]
+
     include_dirs = [extensions_dir]
 
     ext_modules = [
         extension(
-            "detectron2._C",
+            "tensormask._C",
             sources,
             include_dirs=include_dirs,
             define_macros=define_macros,
@@ -60,57 +61,12 @@ def get_extensions():
     return ext_modules
 
 
-def get_model_zoo_configs() -> List[str]:
-    """
-    Return a list of configs to include in package for model zoo. Copy over these configs inside
-    detectron2/model_zoo.
-    """
-
-    # Use absolute paths while symlinking.
-    source_configs_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
-    destination = os.path.join(
-        os.path.dirname(os.path.realpath(__file__)), "detectron2", "model_zoo", "configs"
-    )
-    # Symlink the config directory inside package to have a cleaner pip install.
-    if os.path.exists(destination):
-        # Remove stale symlink/directory from a previous build.
-        if os.path.islink(destination):
-            os.unlink(destination)
-        else:
-            shutil.rmtree(destination)
-
-    try:
-        os.symlink(source_configs_dir, destination)
-    except OSError:
-        # Fall back to copying if symlink fails: ex. on Windows.
-        shutil.copytree(source_configs_dir, destination)
-
-    config_paths = glob.glob("configs/**/*.yaml", recursive=True)
-    return config_paths
-
-
 setup(
-    name="detectron2",
+    name="tensormask",
     version="0.1",
     author="FAIR",
-    url="https://github.com/facebookresearch/detectron2",
-    description="Detectron2 is FAIR's next-generation research "
-    "platform for object detection and segmentation.",
     packages=find_packages(exclude=("configs", "tests")),
-    package_data={"detectron2.model_zoo": get_model_zoo_configs()},
     python_requires=">=3.6",
-    install_requires=[
-        "termcolor>=1.1",
-        "Pillow>=6.0",
-        "yacs>=0.1.6",
-        "tabulate",
-        "cloudpickle",
-        "matplotlib",
-        "tqdm>4.29.0",
-        "tensorboard",
-        "imagesize",
-    ],
-    extras_require={"all": ["shapely", "psutil"]},
     ext_modules=get_extensions(),
     cmdclass={"build_ext": torch.utils.cpp_extension.BuildExtension},
 )
