@@ -6,6 +6,7 @@ import os
 import datetime
 import json
 import numpy as np
+import imagesize
 
 from PIL import Image
 
@@ -262,12 +263,11 @@ def load_sem_seg(gt_root, image_root, gt_ext="png", image_ext="jpg"):
 
     dataset_dicts = []
     for (img_path, gt_path) in zip(input_files, gt_files):
+        local_path = PathManager.get_local_path(gt_path)
+        w, h = imagesize.get(local_path)
         record = {}
         record["file_name"] = img_path
         record["sem_seg_file_name"] = gt_path
-        with PathManager.open(gt_path, "rb") as f:
-            img = Image.open(f)
-            w, h = img.size
         record["height"] = h
         record["width"] = w
         dataset_dicts.append(record)
@@ -331,7 +331,8 @@ def convert_to_coco_dict(dataset_name):
                 area = polygons.area()[0].item()
             else:
                 # Computing areas using bounding boxes
-                area = Boxes([bbox]).area()[0].item()
+                bbox_xy = BoxMode.convert(bbox, BoxMode.XYWH_ABS, BoxMode.XYXY_ABS)
+                area = Boxes([bbox_xy]).area()[0].item()
 
             if "keypoints" in annotation:
                 keypoints = annotation["keypoints"]  # list[int]
