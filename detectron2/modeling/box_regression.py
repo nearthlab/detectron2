@@ -85,10 +85,16 @@ class Box2BoxTransform(object):
         ctr_y = boxes[:, 1] + 0.5 * heights
 
         wx, wy, ww, wh = self.weights
-        dx = deltas[:, 0::4] / wx
-        dy = deltas[:, 1::4] / wy
-        dw = deltas[:, 2::4] / ww
-        dh = deltas[:, 3::4] / wh
+        # ONNX doesn't support slicing with step != 1
+        # dx = deltas[:, 0::4] / wx
+        # dy = deltas[:, 1::4] / wy
+        # dw = deltas[:, 2::4] / ww
+        # dh = deltas[:, 3::4] / wh
+        d = torch.transpose(deltas.reshape(deltas.size(0), -1, 4), 1, 2)
+        dx = d[:, 0, :] / wx
+        dy = d[:, 1, :] / wy
+        dw = d[:, 2, :] / ww
+        dh = d[:, 3, :] / wh
 
         # Prevent sending too large values into torch.exp()
         dw = torch.clamp(dw, max=self.scale_clamp)
