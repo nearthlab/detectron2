@@ -10,7 +10,6 @@ import torch
 import tqdm
 
 from torch import nn
-from torch.onnx import register_custom_op_symbolic
 from detectron2.config import get_cfg
 from detectron2.structures import ImageList
 from detectron2.data.detection_utils import read_image
@@ -76,8 +75,12 @@ def get_parser():
         help="ONNX opset version (default: 9)"
     )
     parser.add_argument(
-        "--test", action="store_true",
-        help="Run test after each onnx export"
+        "--ir-version", default=3, type=int,
+        help="If --check is specified, performs ONNX Internal Representation version conversion"
+    )
+    parser.add_argument(
+        "--check", action="store_true",
+        help="Check exported ONNX files"
     )
     return parser
 
@@ -151,9 +154,17 @@ if __name__ == "__main__":
 
     if args.output:
         assert os.path.isdir(args.output), args.output
-        if args.test:
+        if args.check:
             import onnx
-            import onnxruntime as ort
+            from onnx import version_converter, helper
+
+
+    def convert_ir(onnx_model, ir_version, path):
+        if onnx_model.ir_version != ir_version:
+            logger.info('Converting ONNX model IR version from {} to {} ...'.format(onnx_model.ir_version, ir_version))
+            converted_model = version_converter.convert_version(onnx_model, ir_version)
+            onnx.save(converted_model, path)
+
 
     # If input is provided, run GeneralizedRCNN's "inference" method
     # and, at the same time, export pure CNN parts of the model to ONNX format
@@ -198,21 +209,18 @@ if __name__ == "__main__":
         # extract backbone + FPN features
         if args.output:
             logger.info('Exporting backbone ...')
-            dynamic_axes = {
-                'input_image': {0: 'sequence', 1: 'sequence'}
-            }
+            backbone_name = get_onnx_name('backbone')
             torch.onnx.export(
-                backbone, images.tensor, get_onnx_name('backbone'), opset_version=args.opset,
-                verbose=args.verbose, input_names=['input_image'], output_names=backbone._out_features,
-                dynamic_axes=dynamic_axes
+                backbone, images.tensor, backbone_name, opset_version=args.opset,
+                verbose=args.verbose, input_names=['input_image'], output_names=backbone._out_features
             )
 
-            if args.test:
-                onnx_backbone = onnx.load(get_onnx_name('backbone'))
+            if args.check:
+                print('Checking backbone ...')
+                onnx_backbone = onnx.load(backbone_name)
                 onnx.checker.check_model(onnx_backbone)
-                ort_session = ort.InferenceSession(get_onnx_name('backbone'))
-                onnx_feature_maps = ort_session.run(None, {'input_image': images.tensor})
-                logger.info('onnx_feature_map: {}'.format(onnx_feature_map))
+                print('Model checked! (IR version: {})'.format(onnx_backbone.ir_version))
+                convert_ir(onnx_backbone, args.ir_version, backbone_name)
 
         rpn_input_features = [feature_map[f] for f in rpn.in_features]
         # calculate objectness logits and anchor deltas
@@ -225,6 +233,12 @@ if __name__ == "__main__":
                 rpn_head, rpn_input_features, get_onnx_name('rpn_head'), opset_version=args.opset,
                 verbose=args.verbose, input_names=rpn.in_features, output_names=rpn_head_output_names
             )
+
+            if args.check:
+                logger.info('Checking rpn_head ... ')
+                onnx_rpn_head = onnx.load(get_onnx_name('rpn_head'))
+                onnx.checker.check_model(onnx_rpn_head)
+
         objectness_logits, anchor_deltas = rpn_head(rpn_input_features)
 
         # generate anchors

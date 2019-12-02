@@ -90,7 +90,7 @@ class Box2BoxTransform(object):
         # dy = deltas[:, 1::4] / wy
         # dw = deltas[:, 2::4] / ww
         # dh = deltas[:, 3::4] / wh
-        d = torch.transpose(deltas.reshape(deltas.size(0), -1, 4), 1, 2)
+        d = torch.transpose(deltas.reshape(deltas.size(0), deltas.size(1) // 4, 4), 1, 2)
         dx = d[:, 0, :] / wx
         dy = d[:, 1, :] / wy
         dw = d[:, 2, :] / ww
@@ -120,9 +120,9 @@ class Box2BoxTransform(object):
                     pred_ctr_y + 0.5 * pred_h
                 ],
                 dim=1
-            ).reshape((deltas.size(0), 4, -1)),
+            ).reshape((deltas.size(0), 4, deltas.size(1) // 4)),
             1, 2
-        ).reshape(deltas.size(0), -1)
+        ).reshape(deltas.size(0), deltas.size(1))
         return pred_boxes
 
 
