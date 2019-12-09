@@ -119,10 +119,11 @@ if __name__ == "__main__":
             )
         features = model.backbone(images.tensor)
 
+        rpn_head_in_features = [features[f] for f in model.proposal_generator.in_features]
         if args.output:
             export_onnx(
                 ONNXFriendlyModule(model.proposal_generator.rpn_head),
-                features,
+                rpn_head_in_features,
                 check=args.check,
                 output_dir=args.output,
                 opset_version=args.opset_version,
