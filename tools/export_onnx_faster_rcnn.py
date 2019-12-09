@@ -117,3 +117,14 @@ if __name__ == "__main__":
                 opset_version=args.opset_version,
                 verbose=args.verbose
             )
+        features = model.backbone(images.tensor)
+
+        if args.output:
+            export_onnx(
+                ONNXFriendlyModule(model.rpn),
+                features,
+                check=args.check,
+                output_dir=args.output,
+                opset_version=args.opset_version,
+                verbose=args.verbose
+            )
