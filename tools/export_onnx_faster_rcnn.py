@@ -121,7 +121,7 @@ if __name__ == "__main__":
 
         if args.output:
             export_onnx(
-                ONNXFriendlyModule(model.rpn),
+                ONNXFriendlyModule(model.proposal_generator),
                 features,
                 check=args.check,
                 output_dir=args.output,
