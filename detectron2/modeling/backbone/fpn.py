@@ -128,12 +128,7 @@ class FPN(Backbone):
         for features, lateral_conv, output_conv in zip(
             x[1:], self.lateral_convs[1:], self.output_convs[1:]
         ):
-            # ONNX opset 9 warns about possibly different implementation of interpolate
-            # top_down_features = F.interpolate(prev_features, scale_factor=2, mode="nearest")
-            fshape = prev_features.shape
-            flat = prev_features.flatten()
-            x_interpolate = torch.transpose(torch.cat([flat, flat]).reshape((2, flat.shape[0])), 0, 1).reshape((*fshape[:-1], 2 * fshape[-1]))
-            top_down_features = torch.cat([x_interpolate, x_interpolate], dim=3).reshape((*fshape[:-2], 2*fshape[-2], 2*fshape[-1]))
+            top_down_features = F.interpolate(prev_features, scale_factor=2, mode="nearest")
             lateral_features = lateral_conv(features)
             prev_features = lateral_features + top_down_features
             if self._fuse_type == "avg":
