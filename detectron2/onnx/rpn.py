@@ -1,10 +1,12 @@
-import torch.nn.functional as F
 import copy
-import torch
 import itertools
-from detectron2.modeling.anchor_generator import DefaultAnchorGenerator
-from detectron2.modeling.proposal_generator.rpn import StandardRPNHead, RPN
+
+import torch
+import torch.nn.functional as F
+
 from detectron2.layers import cat, batched_nms
+from detectron2.modeling.anchor_generator import DefaultAnchorGenerator, _create_grid_offsets
+from detectron2.modeling.proposal_generator.rpn import StandardRPNHead, RPN
 from detectron2.onnx.functionalize import register_functionalizer, functionalize
 from detectron2.structures import Boxes
 
@@ -33,18 +35,27 @@ def functionalizeStandardRPNHead(module: StandardRPNHead):
 
 @register_functionalizer(DefaultAnchorGenerator)
 def functionalizeDefaultAnchorGenerator(module: DefaultAnchorGenerator):
+    strides = module.strides
+    cell_anchors = module.cell_anchors
+
     def forward(features):
         num_images = len(features[0])
         grid_sizes = [feature_map.shape[-2:] for feature_map in features]
-        anchors_over_all_feature_maps = module.grid_anchors(grid_sizes)
+        all_anchors = []
+        for size, stride, base_anchors in zip(grid_sizes, strides, cell_anchors):
+            shift_x, shift_y = _create_grid_offsets(size, stride, base_anchors.device)
+            shifts = torch.stack((shift_x, shift_y, shift_x, shift_y), dim=1)
+
+            all_anchors.append((shifts.view(-1, 1, 4) + base_anchors.view(1, -1, 4)).reshape(-1, 4))
 
         anchors_in_image = []
-        for anchors_per_feature_map in anchors_over_all_feature_maps:
+        for anchors_per_feature_map in all_anchors:
             boxes = Boxes(anchors_per_feature_map)
             anchors_in_image.append(boxes.tensor)
 
         anchors = [copy.deepcopy(anchors_in_image) for _ in range(num_images)]
         return anchors
+
     return forward
 
 
@@ -57,19 +68,21 @@ def clip(boxes: torch.Tensor):
         boxes[:, 3].clamp(min=0, max=h)
     ], dim=1)
 
+
 def nonempty(boxes: torch.Tensor, threshold):
     widths = boxes[:, 2] - boxes[:, 0]
     heights = boxes[:, 3] - boxes[:, 1]
     keep = (widths > threshold) & (heights > threshold)
     return keep
 
+
 def find_top_rpn_proposals(
-    proposals,
-    pred_objectness_logits,
-    nms_thresh,
-    pre_nms_topk,
-    post_nms_topk,
-    min_box_side_len
+        proposals,
+        pred_objectness_logits,
+        nms_thresh,
+        pre_nms_topk,
+        post_nms_topk,
+        min_box_side_len
 ):
     """
     For each feature map, select the `pre_nms_topk` highest scoring proposals,
@@ -108,7 +121,7 @@ def find_top_rpn_proposals(
     level_ids = []  # #lvl Tensor, each of shape (topk,)
     batch_idx = torch.arange(1, device=device)
     for level_id, proposals_i, logits_i in zip(
-        itertools.count(), proposals, pred_objectness_logits
+            itertools.count(), proposals, pred_objectness_logits
     ):
         Hi_Wi_A = logits_i.shape[1]
         num_proposals_i = min(pre_nms_topk, Hi_Wi_A)

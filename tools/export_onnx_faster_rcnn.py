@@ -124,17 +124,17 @@ if __name__ == "__main__":
             rpn_in_features = [features[f] for f in model.proposal_generator.in_features]
 
             if args.output:
-                export_onnx(
-                    ONNXFriendlyModule(model.backbone),
-                    images.tensor,
-                    **export_options
-                )
-
-                export_onnx(
-                    ONNXFriendlyModule(model.proposal_generator.rpn_head),
-                    rpn_in_features,
-                    **export_options
-                )
+                # export_onnx(
+                #     ONNXFriendlyModule(model.backbone),
+                #     images.tensor,
+                #     **export_options
+                # )
+                #
+                # export_onnx(
+                #     ONNXFriendlyModule(model.proposal_generator.rpn_head),
+                #     rpn_in_features,
+                #     **export_options
+                # )
 
                 export_onnx(
                     ONNXFriendlyModule(model.proposal_generator.anchor_generator),
@@ -147,4 +147,3 @@ if __name__ == "__main__":
                     rpn_in_features,
                     **export_options
                 )
-
