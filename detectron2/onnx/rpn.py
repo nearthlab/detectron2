@@ -38,7 +38,6 @@ def functionalizeDefaultAnchorGenerator(module: DefaultAnchorGenerator):
     strides = module.strides
 
     def forward(features):
-        num_images = len(features[0])
         grid_sizes = [feature_map.shape[-2:] for feature_map in features]
         cell_anchors = [
             cell_anchor.data.to(device=features[0].device)
@@ -56,8 +55,7 @@ def functionalizeDefaultAnchorGenerator(module: DefaultAnchorGenerator):
             boxes = Boxes(anchors_per_feature_map)
             anchors_in_image.append(boxes.tensor)
 
-        anchors = [copy.deepcopy(anchors_in_image) for _ in range(num_images)]
-        return anchors
+        return [anchors_in_image]
 
     return forward
 
@@ -172,10 +170,12 @@ def find_top_rpn_proposals(
 @register_functionalizer(RPN)
 def functionalizeRPN(module: RPN):
     rpn_head = functionalize(module.rpn_head)
+    anchor_generator = functionalize(module.anchor_generator)
     box2box_transform = module.box2box_transform
 
-    def forward(features, anchors):
+    def forward(features):
         pred_objectness_logits, pred_anchor_deltas = rpn_head(features)
+        anchors = anchor_generator(features)
 
         pred_objectness_logits = [
             # Reshape: (N, A, Hi, Wi) -> (N, Hi, Wi, A) -> (N, Hi*Wi*A)
