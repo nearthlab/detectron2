@@ -36,11 +36,14 @@ def functionalizeStandardRPNHead(module: StandardRPNHead):
 @register_functionalizer(DefaultAnchorGenerator)
 def functionalizeDefaultAnchorGenerator(module: DefaultAnchorGenerator):
     strides = module.strides
-    cell_anchors = module.cell_anchors._buffers.values()
 
     def forward(features):
         num_images = len(features[0])
         grid_sizes = [feature_map.shape[-2:] for feature_map in features]
+        cell_anchors = [
+            cell_anchor.data.to(device=features[0].device)
+            for cell_anchor in module.cell_anchors
+        ]
         all_anchors = []
         for size, stride, base_anchors in zip(grid_sizes, strides, cell_anchors):
             shift_x, shift_y = _create_grid_offsets(size, stride, base_anchors.device)
@@ -169,12 +172,10 @@ def find_top_rpn_proposals(
 @register_functionalizer(RPN)
 def functionalizeRPN(module: RPN):
     rpn_head = functionalize(module.rpn_head)
-    anchor_generator = functionalize(module.anchor_generator)
     box2box_transform = module.box2box_transform
 
-    def forward(features):
+    def forward(features, anchors):
         pred_objectness_logits, pred_anchor_deltas = rpn_head(features)
-        anchors = anchor_generator(features)
 
         pred_objectness_logits = [
             # Reshape: (N, A, Hi, Wi) -> (N, Hi, Wi, A) -> (N, Hi*Wi*A)
