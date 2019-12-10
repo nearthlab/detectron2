@@ -64,7 +64,15 @@ def get_parser():
     )
     parser.add_argument(
         "--check", action="store_true",
-        help="Check exported ONNX files"
+        help="Check exported ONNX model"
+    )
+    parser.add_argument(
+        "--simplify", action="store_true",
+        help="Simplify exported ONNX model"
+    )
+    parser.add_argument(
+        "--skip-optimization", action="store_true",
+        help="Skip optimization while simplifying ONNX model"
     )
     return parser
 
@@ -80,9 +88,6 @@ if __name__ == "__main__":
 
     if args.output:
         assert os.path.isdir(args.output), args.output
-        if args.check:
-            pass
-
 
     # If input is provided, run GeneralizedRCNN's "inference" method
     # and, at the same time, export pure CNN parts of the model to ONNX format
@@ -113,6 +118,8 @@ if __name__ == "__main__":
                 ONNXFriendlyModule(model.backbone),
                 images.tensor,
                 check=args.check,
+                simplify=args.simplify,
+                optimize=not args.skip_optimization,
                 output_dir=args.output,
                 opset_version=args.opset_version,
                 verbose=args.verbose
@@ -125,6 +132,8 @@ if __name__ == "__main__":
                 ONNXFriendlyModule(model.proposal_generator.rpn_head),
                 rpn_head_in_features,
                 check=args.check,
+                simplify=args.simplify,
+                optimize=not args.skip_optimization,
                 output_dir=args.output,
                 opset_version=args.opset_version,
                 verbose=args.verbose
