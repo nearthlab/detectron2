@@ -1,21 +1,22 @@
 import os
+
 import onnx
 import onnxsim
 import torch
+
+import detectron2.onnx.fpn
 import detectron2.onnx.layers
 import detectron2.onnx.nn
 import detectron2.onnx.resnet
-import detectron2.onnx.fpn
 import detectron2.onnx.rpn
-import detectron2.onnx.anchor_generator
 from detectron2.onnx.functionalize import test_functionalizer
 from detectron2.onnx.onnx_friendly_module import ONNXFriendlyModule
 
 
 def export_onnx(
-    model: ONNXFriendlyModule, dummy_input,
-    check=False, simplify=False, optimize=False,
-    output_dir=None, path=None, **kwargs
+        model: ONNXFriendlyModule, dummy_input,
+        check=False, simplify=False, optimize=False,
+        output_dir=None, path=None, **kwargs
 ):
     assert (path is not None and output_dir is None) or (path is None and output_dir is not None)
     path = path or os.path.join(output_dir, '{}.onnx'.format(model.name))
@@ -31,6 +32,7 @@ def export_onnx(
         onnx_model = onnx.load(path)
         onnx.checker.check_model(onnx_model)
         print('ONNX model checked! (IR version: {})'.format(onnx_model.ir_version))
+
 
 if __name__ == '__main__':
     import torch.nn as nn

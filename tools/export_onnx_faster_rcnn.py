@@ -88,7 +88,7 @@ if __name__ == "__main__":
 
     if args.output:
         assert os.path.isdir(args.output), args.output
-        export_kwargs = {
+        export_options = {
             "check": args.check,
             "simplify": args.simplify,
             "optimize": not args.skip_optimization,
@@ -120,27 +120,31 @@ if __name__ == "__main__":
 
             # the GeneralizedRCNN's "preprocess_image" method
             images = ImageList.from_tensors([model.normalizer(img.to(model.device))], model.backbone.size_divisibility)
+            features = model.backbone(images.tensor)
+            rpn_in_features = [features[f] for f in model.proposal_generator.in_features]
 
             if args.output:
                 export_onnx(
                     ONNXFriendlyModule(model.backbone),
                     images.tensor,
-                    **export_kwargs
+                    **export_options
                 )
-            features = model.backbone(images.tensor)
 
-            rpn_head_in_features = [features[f] for f in model.proposal_generator.in_features]
-            if args.output:
                 export_onnx(
                     ONNXFriendlyModule(model.proposal_generator.rpn_head),
-                    rpn_head_in_features,
-                    **export_kwargs
+                    rpn_in_features,
+                    **export_options
                 )
 
-            grid_sizes = torch.tensor([feature_map.shape[-2:] for feature_map in features])
-            if args.output:
                 export_onnx(
                     ONNXFriendlyModule(model.proposal_generator.anchor_generator),
-                    grid_sizes,
-                    **export_kwargs
+                    rpn_in_features,
+                    **export_options
                 )
+
+                export_onnx(
+                    ONNXFriendlyModule(model.proposal_generator),
+                    rpn_in_features,
+                    **export_options
+                )
+
