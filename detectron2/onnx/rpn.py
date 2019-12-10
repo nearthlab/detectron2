@@ -36,7 +36,7 @@ def functionalizeStandardRPNHead(module: StandardRPNHead):
 @register_functionalizer(DefaultAnchorGenerator)
 def functionalizeDefaultAnchorGenerator(module: DefaultAnchorGenerator):
     strides = module.strides
-    cell_anchors = module.cell_anchors
+    cell_anchors = module.cell_anchors._buffers.values()
 
     def forward(features):
         num_images = len(features[0])
