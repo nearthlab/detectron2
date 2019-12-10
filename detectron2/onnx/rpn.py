@@ -1,4 +1,3 @@
-import copy
 import itertools
 
 import torch
@@ -8,7 +7,6 @@ from detectron2.layers import cat, batched_nms
 from detectron2.modeling.anchor_generator import DefaultAnchorGenerator, _create_grid_offsets
 from detectron2.modeling.proposal_generator.rpn import StandardRPNHead, RPN
 from detectron2.onnx.functionalize import register_functionalizer, functionalize
-from detectron2.structures import Boxes
 
 
 @register_functionalizer(StandardRPNHead)
@@ -33,6 +31,36 @@ def functionalizeStandardRPNHead(module: StandardRPNHead):
     return forward
 
 
+def boxinit(boxes: torch.Tensor):
+    device = boxes.device if isinstance(boxes, torch.Tensor) else torch.device("cpu")
+    boxes = torch.as_tensor(boxes, dtype=torch.float32, device=device)
+    if boxes.numel() == 0:
+        boxes = torch.zeros(0, 4, dtype=torch.float32, device=device)
+    return boxes
+
+
+def boxclip(boxes: torch.Tensor):
+    w, h = 640, 480
+    return torch.cat([
+        boxes[:, 0].clamp(min=0, max=w),
+        boxes[:, 1].clamp(min=0, max=h),
+        boxes[:, 2].clamp(min=0, max=w),
+        boxes[:, 3].clamp(min=0, max=h)
+    ], dim=1)
+
+
+def boxnonempty(boxes: torch.Tensor, threshold):
+    widths = boxes[:, 2] - boxes[:, 0]
+    heights = boxes[:, 3] - boxes[:, 1]
+    keep = (widths > threshold) & (heights > threshold)
+    return keep
+
+
+def boxcat(boxes):
+    cat_boxes = cat([b for b in boxes], dim=0)
+    return cat_boxes
+
+
 @register_functionalizer(DefaultAnchorGenerator)
 def functionalizeDefaultAnchorGenerator(module: DefaultAnchorGenerator):
     strides = module.strides
@@ -52,29 +80,11 @@ def functionalizeDefaultAnchorGenerator(module: DefaultAnchorGenerator):
 
         anchors_in_image = []
         for anchors_per_feature_map in all_anchors:
-            boxes = Boxes(anchors_per_feature_map)
-            anchors_in_image.append(boxes.tensor)
+            anchors_in_image.append(boxinit(anchors_per_feature_map))
 
         return [anchors_in_image]
 
     return forward
-
-
-def clip(boxes: torch.Tensor):
-    w, h = 640, 480
-    return torch.cat([
-        boxes[:, 0].clamp(min=0, max=w),
-        boxes[:, 1].clamp(min=0, max=h),
-        boxes[:, 2].clamp(min=0, max=w),
-        boxes[:, 3].clamp(min=0, max=h)
-    ], dim=1)
-
-
-def nonempty(boxes: torch.Tensor, threshold):
-    widths = boxes[:, 2] - boxes[:, 0]
-    heights = boxes[:, 3] - boxes[:, 1]
-    keep = (widths > threshold) & (heights > threshold)
-    return keep
 
 
 def find_top_rpn_proposals(
@@ -146,15 +156,15 @@ def find_top_rpn_proposals(
     level_ids = cat(level_ids, dim=0)
 
     # 3. For each image, run a per-level NMS, and choose topk results.
-    boxes = clip(topk_proposals[0])
+    boxes = boxclip(topk_proposals[0])
     scores_per_img = topk_scores[0]
 
     # filter empty boxes
-    keep = nonempty(boxes, min_box_side_len)
+    keep = boxnonempty(boxes, min_box_side_len)
     lvl = level_ids
     boxes, scores_per_img, lvl = boxes[keep], scores_per_img[keep], level_ids[keep]
 
-    keep = batched_nms(boxes.tensor, scores_per_img, lvl, nms_thresh)
+    keep = batched_nms(boxes, scores_per_img, lvl, nms_thresh)
     # In Detectron1, there was different behavior during training vs. testing.
     # (https://github.com/facebookresearch/Detectron/issues/459)
     # During training, topk is over the proposals from *all* images in the training batch.
@@ -188,7 +198,7 @@ def functionalizeRPN(module: RPN):
         anchors = list(zip(anchors))
         # For each feature map
         for anchors_i, pred_anchor_deltas_i in zip(anchors, pred_anchor_deltas):
-            B = anchors_i[0].tensor.size(1)
+            B = anchors_i[0].size(1)
             N, _, Hi, Wi = pred_anchor_deltas_i.shape
             # Reshape: (N, A*B, Hi, Wi) -> (N, A, B, Hi, Wi) -> (N, Hi, Wi, A, B) -> (N*Hi*Wi*A, B)
             pred_anchor_deltas_i = (
@@ -196,7 +206,7 @@ def functionalizeRPN(module: RPN):
             )
             # Concatenate all anchors to shape (N*Hi*Wi*A, B)
             # type(anchors_i[0]) is Boxes (B = 4) or RotatedBoxes (B = 5)
-            anchors_i = type(anchors_i[0]).cat(anchors_i)
+            anchors_i = boxcat(anchors_i)
             proposals_i = box2box_transform.apply_deltas(
                 pred_anchor_deltas_i, anchors_i.tensor
             )
