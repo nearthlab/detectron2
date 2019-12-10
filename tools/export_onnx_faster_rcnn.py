@@ -39,7 +39,7 @@ def get_parser():
     parser.add_argument(
         "--output",
         help="A file or directory to save output visualizations. "
-        "If not given, will show output in an OpenCV window.",
+             "If not given, will show output in an OpenCV window.",
     )
 
     parser.add_argument(
@@ -88,53 +88,59 @@ if __name__ == "__main__":
 
     if args.output:
         assert os.path.isdir(args.output), args.output
+        export_kwargs = {
+            "check": args.check,
+            "simplify": args.simplify,
+            "optimize": not args.skip_optimization,
+            "output_dir": args.output,
+            "opset_version": args.opset_version,
+            "verbose": args.verbose
+        }
 
-    # If input is provided, run GeneralizedRCNN's "inference" method
-    # and, at the same time, export pure CNN parts of the model to ONNX format
-    # by tracing the model's calculation
-    if args.input:
-        assert len(args.input) == 1, len(args.input)
+        # If input is provided, run GeneralizedRCNN's "inference" method
+        # and, at the same time, export pure CNN parts of the model to ONNX format
+        # by tracing the model's calculation
+        if args.input:
+            assert len(args.input) == 1, len(args.input)
 
-        # load model
-        cfg = setup_cfg(args)
-        predictor = DefaultPredictor(cfg)
-        model = predictor.model
+            # load model
+            cfg = setup_cfg(args)
+            predictor = DefaultPredictor(cfg)
+            model = predictor.model
 
-        # read image
-        img = read_image(args.input[0])
+            # read image
+            img = read_image(args.input[0])
 
-        # the preprocessing implemented in the DefaultPredictor's "__call__" method
-        if predictor.input_format == "RGB":
-            img = img[:, :, ::-1]
-        height, width = img.shape[:2]
-        img = predictor.transform_gen.get_transform(img).apply_image(img)
-        img = torch.as_tensor(img.astype('float32').transpose(2, 0, 1))
+            # the preprocessing implemented in the DefaultPredictor's "__call__" method
+            if predictor.input_format == "RGB":
+                img = img[:, :, ::-1]
+            height, width = img.shape[:2]
+            img = predictor.transform_gen.get_transform(img).apply_image(img)
+            img = torch.as_tensor(img.astype('float32').transpose(2, 0, 1))
 
-        # the GeneralizedRCNN's "preprocess_image" method
-        images = ImageList.from_tensors([model.normalizer(img.to(model.device))], model.backbone.size_divisibility)
+            # the GeneralizedRCNN's "preprocess_image" method
+            images = ImageList.from_tensors([model.normalizer(img.to(model.device))], model.backbone.size_divisibility)
 
-        if args.output:
-            export_onnx(
-                ONNXFriendlyModule(model.backbone),
-                images.tensor,
-                check=args.check,
-                simplify=args.simplify,
-                optimize=not args.skip_optimization,
-                output_dir=args.output,
-                opset_version=args.opset_version,
-                verbose=args.verbose
-            )
-        features = model.backbone(images.tensor)
+            if args.output:
+                export_onnx(
+                    ONNXFriendlyModule(model.backbone),
+                    images.tensor,
+                    **export_kwargs
+                )
+            features = model.backbone(images.tensor)
 
-        rpn_head_in_features = [features[f] for f in model.proposal_generator.in_features]
-        if args.output:
-            export_onnx(
-                ONNXFriendlyModule(model.proposal_generator.rpn_head),
-                rpn_head_in_features,
-                check=args.check,
-                simplify=args.simplify,
-                optimize=not args.skip_optimization,
-                output_dir=args.output,
-                opset_version=args.opset_version,
-                verbose=args.verbose
-            )
+            rpn_head_in_features = [features[f] for f in model.proposal_generator.in_features]
+            if args.output:
+                export_onnx(
+                    ONNXFriendlyModule(model.proposal_generator.rpn_head),
+                    rpn_head_in_features,
+                    **export_kwargs
+                )
+
+            grid_sizes = torch.tensor([feature_map.shape[-2:] for feature_map in features])
+            if args.output:
+                export_onnx(
+                    ONNXFriendlyModule(model.proposal_generator.anchor_generator),
+                    grid_sizes,
+                    **export_kwargs
+                )

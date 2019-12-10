@@ -7,6 +7,7 @@ import detectron2.onnx.nn
 import detectron2.onnx.resnet
 import detectron2.onnx.fpn
 import detectron2.onnx.rpn
+import detectron2.onnx.anchor_generator
 from detectron2.onnx.functionalize import test_functionalizer
 from detectron2.onnx.onnx_friendly_module import ONNXFriendlyModule
 

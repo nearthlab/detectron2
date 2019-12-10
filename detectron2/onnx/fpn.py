@@ -1,5 +1,4 @@
 import torch
-import torch.nn.functional as F
 from detectron2.modeling.backbone import FPN
 from detectron2.onnx.functionalize import register_functionalizer, functionalize
 
