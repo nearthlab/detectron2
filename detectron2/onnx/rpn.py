@@ -9,28 +9,6 @@ from detectron2.modeling.proposal_generator.rpn import StandardRPNHead, RPN
 from detectron2.onnx.functionalize import register_functionalizer, functionalize
 
 
-@register_functionalizer(StandardRPNHead)
-def functionalizeStandardRPNHead(module: StandardRPNHead):
-    conv = functionalize(module.conv)
-    objectness_logits = functionalize(module.objectness_logits)
-    anchor_deltas = functionalize(module.anchor_deltas)
-
-    def forward(features):
-        """
-        Args:
-            features (list[Tensor]): list of feature maps
-        """
-        pred_objectness_logits = []
-        pred_anchor_deltas = []
-        for x in features:
-            t = F.relu(conv(x))
-            pred_objectness_logits.append(objectness_logits(t))
-            pred_anchor_deltas.append(anchor_deltas(t))
-        return pred_objectness_logits, pred_anchor_deltas
-
-    return forward
-
-
 def boxinit(boxes: torch.Tensor):
     device = boxes.device if isinstance(boxes, torch.Tensor) else torch.device("cpu")
     boxes = torch.as_tensor(boxes, dtype=torch.float32, device=device)
@@ -61,6 +39,28 @@ def boxcat(boxes):
     return cat_boxes
 
 
+@register_functionalizer(StandardRPNHead)
+def functionalizeStandardRPNHead(module: StandardRPNHead):
+    conv = functionalize(module.conv)
+    objectness_logits = functionalize(module.objectness_logits)
+    anchor_deltas = functionalize(module.anchor_deltas)
+
+    def forward(features):
+        """
+        Args:
+            features (list[Tensor]): list of feature maps
+        """
+        pred_objectness_logits = []
+        pred_anchor_deltas = []
+        for x in features:
+            t = F.relu(conv(x))
+            pred_objectness_logits.append(objectness_logits(t))
+            pred_anchor_deltas.append(anchor_deltas(t))
+        return pred_objectness_logits, pred_anchor_deltas
+
+    return forward
+
+
 @register_functionalizer(DefaultAnchorGenerator)
 def functionalizeDefaultAnchorGenerator(module: DefaultAnchorGenerator):
     strides = module.strides
@@ -82,7 +82,7 @@ def functionalizeDefaultAnchorGenerator(module: DefaultAnchorGenerator):
         for anchors_per_feature_map in all_anchors:
             anchors_in_image.append(boxinit(anchors_per_feature_map))
 
-        return [anchors_in_image]
+        return torch.tensor([anchors_in_image])
 
     return forward
 
@@ -180,12 +180,10 @@ def find_top_rpn_proposals(
 @register_functionalizer(RPN)
 def functionalizeRPN(module: RPN):
     rpn_head = functionalize(module.rpn_head)
-    anchor_generator = functionalize(module.anchor_generator)
     box2box_transform = module.box2box_transform
 
-    def forward(features):
+    def forward(features, anchors):
         pred_objectness_logits, pred_anchor_deltas = rpn_head(features)
-        anchors = anchor_generator(features)
 
         pred_objectness_logits = [
             # Reshape: (N, A, Hi, Wi) -> (N, Hi, Wi, A) -> (N, Hi*Wi*A)

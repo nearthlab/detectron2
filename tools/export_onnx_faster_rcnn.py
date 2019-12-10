@@ -122,6 +122,7 @@ if __name__ == "__main__":
             images = ImageList.from_tensors([model.normalizer(img.to(model.device))], model.backbone.size_divisibility)
             features = model.backbone(images.tensor)
             rpn_in_features = [features[f] for f in model.proposal_generator.in_features]
+            anchors = model.proposal_generator.anchor_generator(rpn_in_features)
 
             if args.output:
                 # export_onnx(
@@ -137,13 +138,13 @@ if __name__ == "__main__":
                 # )
 
                 export_onnx(
-                    ONNXFriendlyModule(model.proposal_generator.anchor_generator),
-                    rpn_in_features,
+                    ONNXFriendlyModule(model.proposal_generator),
+                    (rpn_in_features, anchors),
                     **export_options
                 )
 
                 export_onnx(
-                    ONNXFriendlyModule(model.proposal_generator),
+                    ONNXFriendlyModule(model.proposal_generator.anchor_generator),
                     rpn_in_features,
                     **export_options
                 )
