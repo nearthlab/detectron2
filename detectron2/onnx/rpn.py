@@ -18,13 +18,13 @@ def boxinit(boxes: torch.Tensor):
 
 
 def boxclip(boxes: torch.Tensor):
-    w, h = 640, 480
-    return torch.cat([
-        boxes[:, 0].clamp(min=0, max=w),
-        boxes[:, 1].clamp(min=0, max=h),
-        boxes[:, 2].clamp(min=0, max=w),
-        boxes[:, 3].clamp(min=0, max=h)
-    ], dim=1)
+    w, h = 640.0, 480.0
+    return torch.transpose(torch.cat([
+        boxes[:, 0].clamp(min=0, max=w).reshape(1, boxes.shape[0]),
+        boxes[:, 1].clamp(min=0, max=h).reshape(1, boxes.shape[0]),
+        boxes[:, 2].clamp(min=0, max=w).reshape(1, boxes.shape[0]),
+        boxes[:, 3].clamp(min=0, max=h).reshape(1, boxes.shape[0])
+    ], dim=1).reshape((1, *boxes.shape[::-1])), 1, 2)[0]
 
 
 def boxnonempty(boxes: torch.Tensor, threshold):
@@ -37,6 +37,48 @@ def boxnonempty(boxes: torch.Tensor, threshold):
 def boxcat(boxes):
     cat_boxes = cat([b for b in boxes], dim=0)
     return cat_boxes
+
+
+def apply_deltas(deltas, boxes, weights, scale_clamp):
+    """
+    deltas (Tensor): (Batch, N, k*4)
+    boxes (Tensor): (Batch, N, k*4)
+    """
+    widths = boxes[:, :, 2] - boxes[:, :, 0]
+    heights = boxes[:, :, 3] - boxes[:, :, 1]
+    ctr_x = boxes[:, :, 0] + 0.5 * widths
+    ctr_y = boxes[:, :, 1] + 0.5 * heights
+
+    wx, wy, ww, wh = weights
+    d = torch.transpose(deltas.reshape(deltas.size(0), deltas.size(1), deltas.size(2) // 4, 4), 2, 3)
+    dx = d[:, :, 0, :] / wx
+    dy = d[:, :, 1, :] / wy
+    dw = d[:, :, 2, :] / ww
+    dh = d[:, :, 3, :] / wh
+
+    # Prevent sending too large values into torch.exp()
+    dw = torch.clamp(dw, max=scale_clamp)
+    dh = torch.clamp(dh, max=scale_clamp)
+
+    pred_ctr_x = dx * widths[:, :, None] + ctr_x[:, :, None]
+    pred_ctr_y = dy * heights[:, :, None] + ctr_y[:, :, None]
+    pred_w = torch.exp(dw) * widths[:, :, None]
+    pred_h = torch.exp(dh) * heights[:, :, None]
+
+    pred_boxes = torch.transpose(
+        torch.cat(
+            [
+                pred_ctr_x - 0.5 * pred_w,
+                pred_ctr_y - 0.5 * pred_h,
+                pred_ctr_x + 0.5 * pred_w,
+                pred_ctr_y + 0.5 * pred_h
+            ],
+            dim=1
+        ).reshape((deltas.size(0), deltas.size(1), 4, deltas.size(2) // 4)),
+        1, 2
+    ).reshape(deltas.size(0), deltas.size(1), deltas.size(2))
+
+    return pred_boxes
 
 
 @register_functionalizer(StandardRPNHead)
@@ -77,12 +119,7 @@ def functionalizeDefaultAnchorGenerator(module: DefaultAnchorGenerator):
             shifts = torch.stack((shift_x, shift_y, shift_x, shift_y), dim=1)
 
             all_anchors.append((shifts.view(-1, 1, 4) + base_anchors.view(1, -1, 4)).reshape(-1, 4))
-
-        anchors_in_image = []
-        for anchors_per_feature_map in all_anchors:
-            anchors_in_image.append(boxinit(anchors_per_feature_map))
-
-        return torch.tensor([anchors_in_image])
+        return all_anchors
 
     return forward
 
@@ -129,31 +166,31 @@ def find_top_rpn_proposals(
     # 1. Select top-k anchor for every level and every image
     topk_scores = []  # #lvl Tensor, each of shape N x topk
     topk_proposals = []
-    level_ids = []  # #lvl Tensor, each of shape (topk,)
-    batch_idx = torch.arange(1, device=device)
+    # level_ids = []  # #lvl Tensor, each of shape (topk,)
     for level_id, proposals_i, logits_i in zip(
             itertools.count(), proposals, pred_objectness_logits
     ):
         Hi_Wi_A = logits_i.shape[1]
         num_proposals_i = min(pre_nms_topk, Hi_Wi_A)
 
-        # sort is faster than topk (https://github.com/pytorch/pytorch/issues/22812)
-        # topk_scores_i, topk_idx = logits_i.topk(num_proposals_i, dim=1)
-        logits_i, idx = logits_i.sort(descending=True, dim=1)
-        topk_scores_i = logits_i[batch_idx, :num_proposals_i]
-        topk_idx = idx[batch_idx, :num_proposals_i]
+        topk_scores_i, topk_idx = logits_i.topk(num_proposals_i, dim=1)
+        topk_proposals_i = proposals_i[:, topk_idx].reshape((*topk_scores_i.shape, 4))  # N x topk x 4
 
-        # each is N x topk
-        topk_proposals_i = proposals_i[batch_idx[:, None], topk_idx]  # N x topk x 4
+        if num_proposals_i < pre_nms_topk:
+            topk_proposals_i = F.pad(topk_proposals_i, pad=(0, 0, 0, pre_nms_topk - num_proposals_i, 0, 0), mode='constant', value=0)
 
+        print(topk_proposals_i.shape)
         topk_proposals.append(topk_proposals_i)
         topk_scores.append(topk_scores_i)
-        level_ids.append(torch.full((num_proposals_i,), level_id, dtype=torch.int64, device=device))
-
+        # level_ids.append(torch.full((num_proposals_i,), level_id, dtype=torch.int32, device=device))
+    return topk_proposals[0], topk_proposals[1], topk_proposals[2], topk_proposals[3], topk_proposals[4]
+    """
     # 2. Concat all levels together
-    topk_scores = cat(topk_scores, dim=1)
-    topk_proposals = cat(topk_proposals, dim=1)
-    level_ids = cat(level_ids, dim=0)
+    topk_scores = torch.cat(topk_scores, dim=1)
+    topk_proposals = torch.cat(topk_proposals, dim=1)
+    print(topk_scores.shape, topk_proposals.shape)
+    # level_ids = cat(level_ids, dim=0)
+    return topk_proposals
 
     # 3. For each image, run a per-level NMS, and choose topk results.
     boxes = boxclip(topk_proposals[0])
@@ -175,50 +212,48 @@ def find_top_rpn_proposals(
     keep = keep[:post_nms_topk]
 
     return boxes[keep], scores_per_img[keep]
+    """
 
 
 @register_functionalizer(RPN)
 def functionalizeRPN(module: RPN):
     rpn_head = functionalize(module.rpn_head)
-    box2box_transform = module.box2box_transform
+    weights = module.box2box_transform.weights
+    scale_clamp = module.box2box_transform.scale_clamp
 
     def forward(features, anchors):
         pred_objectness_logits, pred_anchor_deltas = rpn_head(features)
 
         pred_objectness_logits = [
             # Reshape: (N, A, Hi, Wi) -> (N, Hi, Wi, A) -> (N, Hi*Wi*A)
-            score.permute(0, 2, 3, 1).reshape(1, -1)
+            score.permute(0, 2, 3, 1).flatten(1)
             for score in pred_objectness_logits
         ]
 
         proposals = []
-        # Transpose anchors from images-by-feature-maps (N, L) to feature-maps-by-images (L, N)
-        anchors = list(zip(anchors))
         # For each feature map
         for anchors_i, pred_anchor_deltas_i in zip(anchors, pred_anchor_deltas):
-            B = anchors_i[0].size(1)
-            N, _, Hi, Wi = pred_anchor_deltas_i.shape
-            # Reshape: (N, A*B, Hi, Wi) -> (N, A, B, Hi, Wi) -> (N, Hi, Wi, A, B) -> (N*Hi*Wi*A, B)
-            pred_anchor_deltas_i = (
-                pred_anchor_deltas_i.view(N, -1, B, Hi, Wi).permute(0, 3, 4, 1, 2).reshape(-1, B)
-            )
-            # Concatenate all anchors to shape (N*Hi*Wi*A, B)
-            # type(anchors_i[0]) is Boxes (B = 4) or RotatedBoxes (B = 5)
-            anchors_i = boxcat(anchors_i)
-            proposals_i = box2box_transform.apply_deltas(
-                pred_anchor_deltas_i, anchors_i.tensor
-            )
-            # Append feature map proposals with shape (N, Hi*Wi*A, B)
-            proposals.append(proposals_i.view(N, -1, B))
+            B = anchors_i.size(2)
+            N, AB, Hi, Wi = pred_anchor_deltas_i.shape
+            A = AB // B
+            pred_anchor_deltas_i = pred_anchor_deltas_i.permute(0, 2, 3, 1).reshape(N, Hi*Wi*A, B)
 
-        proposals = find_top_rpn_proposals(
-            proposals,
-            pred_objectness_logits,
-            module.nms_thresh,
-            module.pre_nms_topk[False],
-            module.post_nms_topk[False],
-            module.min_box_side_len
-        )
+            proposals_i = apply_deltas(
+                pred_anchor_deltas_i, anchors_i, weights, scale_clamp
+            )
+
+            # Append feature map proposals with shape (N, Hi*Wi*A, B)
+            proposals.append(proposals_i.view(N, Hi*Wi*A, B))
+
+        with torch.no_grad():
+            proposals = find_top_rpn_proposals(
+                proposals,
+                pred_objectness_logits,
+                module.nms_thresh,
+                module.pre_nms_topk[False],
+                module.post_nms_topk[False],
+                module.min_box_side_len
+            )
 
         return proposals
 

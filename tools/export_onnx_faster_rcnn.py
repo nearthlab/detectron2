@@ -123,6 +123,7 @@ if __name__ == "__main__":
             features = model.backbone(images.tensor)
             rpn_in_features = [features[f] for f in model.proposal_generator.in_features]
             anchors = model.proposal_generator.anchor_generator(rpn_in_features)
+            anchors = [boxes.tensor.unsqueeze(0) for boxes in anchors[0]]
 
             if args.output:
                 # export_onnx(
