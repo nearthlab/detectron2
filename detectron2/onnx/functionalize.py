@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 
+
 FUNCTIONALIZERS = dict()
 
 
@@ -29,23 +30,61 @@ def register_functionalizer(cls):
     return wrapper
 
 
-def test_functionalizer(module: nn.Module, input_tensor: torch.Tensor):
+def test_equal(y1, y2):
+    if type(y1) != type(y2):
+        return False, 'Different types: {} / {}'.format(type(y1), type(y2))
+    if type(y1) == torch.Tensor:
+        success = (y1 == y2).all()
+        msg = '' if success else 'Different tensors: {} / {}'.format(y1, y2)
+        return success, msg
+    elif type(y1) in [list, tuple]:
+        if len(y1) != len(y2):
+            return False, 'Different length: {} / {}'.format(len(y1), len(y2))
+        for z1, z2 in zip(y1, y2):
+            success, msg = test_equal(z1, z2)
+            if not success:
+                return success, msg
+        return True, ''
+    elif type(y1) == dict:
+        if y1.keys() != y2.keys():
+            return False, 'Different keys: {} / {}'.format(y1.keys(), y2.keys())
+        for key in y1:
+            success, msg = test_equal(y1.get(key), y2.get(key))
+            if not success:
+                return success, msg
+        return True, ''
+    else:
+        success = (y1 == y2)
+        msg = '' if success else 'Different values: {} / {}'.format(y1, y2)
+        return success, msg
+
+
+def get_shapes(x):
+    if type(x) == torch.Tensor:
+        return list(x.shape)
+    elif type(x) == dict:
+        return [get_shapes(x.get(key)) for key in sorted(x.keys())]
+    elif type(x) in [list, tuple]:
+        return [get_shapes(value) for value in x]
+    else:
+        return None
+
+
+def test_functionalizer(module: nn.Module, dummy_input):
     module = module.cuda()
     func = functionalize(module)
 
-    orig_output = module(input_tensor)
-    func_output = func(input_tensor)
+    orig_output = module(dummy_input)
+    func_output = func(dummy_input)
 
-    if type(orig_output) == torch.Tensor:
-        assert (orig_output == func_output).all(),\
-            "module output: {}\nfunctional output: {}".format(orig_output, func_output)
+    success, msg = test_equal(orig_output, func_output)
+    if success:
+        print("Test passed: module({})".format(module.__class__))
+        print("\tinput shapes: {}".format(get_shapes(dummy_input)))
+        print("\toutput shapes: {}".format(get_shapes(orig_output)))
+    else:
+        print("Test failed: module({})\n\t{}".format(module.__class__, msg))
 
-    if type(orig_output) == dict:
-        for name in orig_output:
-            assert (orig_output.get(name) == func_output.get(name)).all(),\
-                "[{}]\nmodule output: {}\nfunctional output: {}".format(name, orig_output, func_output)
-
-    print("Test passed: module({}), input_tensor({})".format(module.__class__, input_tensor.shape))
 
 if __name__ == '__main__':
     print(FUNCTIONALIZERS)

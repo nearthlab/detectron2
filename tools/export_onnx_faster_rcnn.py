@@ -7,7 +7,12 @@ import torch
 from detectron2.config import get_cfg
 from detectron2.data.detection_utils import read_image
 from detectron2.engine.defaults import DefaultPredictor
-from detectron2.onnx import ONNXFriendlyModule, export_onnx
+from detectron2.onnx import (
+    composeTRTFriendlyModule,
+    TRTFriendlyModule,
+    export_onnx,
+    test_functionalizer
+)
 from detectron2.structures import ImageList
 from detectron2.utils.logger import setup_logger
 
@@ -63,6 +68,10 @@ def get_parser():
         help="ONNX opset version (default: 9)"
     )
     parser.add_argument(
+        "--test", action="store_true",
+        help="Test functionalizer"
+    )
+    parser.add_argument(
         "--check", action="store_true",
         help="Check exported ONNX model"
     )
@@ -110,42 +119,53 @@ if __name__ == "__main__":
 
             # read image
             img = read_image(args.input[0])
+            print('original image shape: {}'.format(img.shape))
 
             # the preprocessing implemented in the DefaultPredictor's "__call__" method
             if predictor.input_format == "RGB":
                 img = img[:, :, ::-1]
             height, width = img.shape[:2]
             img = predictor.transform_gen.get_transform(img).apply_image(img)
+            print('resized image shape: {}'.format(img.shape))
             img = torch.as_tensor(img.astype('float32').transpose(2, 0, 1))
 
             # the GeneralizedRCNN's "preprocess_image" method
             images = ImageList.from_tensors([model.normalizer(img.to(model.device))], model.backbone.size_divisibility)
             features = model.backbone(images.tensor)
             rpn_in_features = [features[f] for f in model.proposal_generator.in_features]
-            anchors = model.proposal_generator.anchor_generator(rpn_in_features)
-            anchors = [boxes.tensor.unsqueeze(0) for boxes in anchors[0]]
+
+            if args.test:
+                test_functionalizer(model.backbone.bottom_up, images.tensor)
+                test_functionalizer(model.backbone, images.tensor)
+                test_functionalizer(model.proposal_generator.rpn_head, rpn_in_features)
 
             if args.output:
+                backbone = TRTFriendlyModule(model.backbone)
+                rpn_head = TRTFriendlyModule(model.proposal_generator.rpn_head)
+                def backbone_rpn_head(x):
+                    backbone_features = backbone(x)
+                    rpn_in_features = [backbone_features[f] for f in model.proposal_generator.in_features]
+                    return rpn_head(rpn_in_features)
+
+                export_onnx(
+                    TRTFriendlyModule(backbone_rpn_head, name='backbone_rpn_head'),
+                    torch.zeros_like(images.tensor),
+                    **export_options
+                )
                 # export_onnx(
-                #     ONNXFriendlyModule(model.backbone),
-                #     images.tensor,
-                #     **export_options
-                # )
-                #
-                # export_onnx(
-                #     ONNXFriendlyModule(model.proposal_generator.rpn_head),
-                #     rpn_in_features,
+                #     TRTFriendlyModule(model.backbone.bottom_up),
+                #     torch.zeros_like(images.tensor),
                 #     **export_options
                 # )
 
-                export_onnx(
-                    ONNXFriendlyModule(model.proposal_generator),
-                    (rpn_in_features, anchors),
-                    **export_options
-                )
+                # export_onnx(
+                #     TRTFriendlyModule(model.backbone),
+                #     torch.zeros_like(images.tensor),
+                #     **export_options
+                # )
 
-                export_onnx(
-                    ONNXFriendlyModule(model.proposal_generator.anchor_generator),
-                    rpn_in_features,
-                    **export_options
-                )
+                # export_onnx(
+                #     TRTFriendlyModule(model.proposal_generator.rpn_head),
+                #     [torch.zeros_like(x) for x in rpn_in_features],
+                #     **export_options
+                # )

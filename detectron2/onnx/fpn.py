@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 from detectron2.modeling.backbone import FPN
 from detectron2.onnx.functionalize import register_functionalizer, functionalize
 
@@ -12,6 +13,13 @@ def functionalizeFPN(module: FPN):
     top_block = module.top_block
     fuse_type = module._fuse_type
 
+    def upsample(x):
+        fshape = x.shape
+        flat = x.flatten(1)
+        flat = flat.reshape((1, *flat.shape))
+        x_interpolate = torch.transpose(torch.cat([flat, flat], dim=1), 1, 2).reshape((*fshape[:-1], 2*fshape[-1]))
+        return torch.cat([x_interpolate, x_interpolate], dim=3).reshape((*fshape[:-2], 2*fshape[-2], 2*fshape[-1]))
+
     def forward(x):
         bottom_up_features = bottom_up(x)
         x = [bottom_up_features[f] for f in in_features[::-1]]
@@ -23,11 +31,7 @@ def functionalizeFPN(module: FPN):
         ):
             # ONNX opset 9 warns about possibly different implementation of interpolate
             # top_down_features = F.interpolate(prev_features, scale_factor=2, mode="nearest")
-            fshape = prev_features.shape
-            flat = prev_features.flatten(1)
-            flat = flat.reshape((1, *flat.shape))
-            x_interpolate = torch.transpose(torch.cat([flat, flat], dim=1), 1, 2).reshape((*fshape[:-1], 2*fshape[-1]))
-            top_down_features = torch.cat([x_interpolate, x_interpolate], dim=3).reshape((*fshape[:-2], 2*fshape[-2], 2*fshape[-1]))
+            top_down_features = upsample(prev_features)
             lateral_features = lateral_conv(features)
             prev_features = lateral_features + top_down_features
             if fuse_type == "avg":
