@@ -20,30 +20,59 @@ def functionalizeFPN(module: FPN):
         x_interpolate = torch.transpose(torch.cat([flat, flat], dim=1), 1, 2).reshape((*fshape[:-1], 2*fshape[-1]))
         return torch.cat([x_interpolate, x_interpolate], dim=3).reshape((*fshape[:-2], 2*fshape[-2], 2*fshape[-1]))
 
+    # def forward(x):
+    #     bottom_up_features = bottom_up(x)
+    #     x = [bottom_up_features[f] for f in in_features[::-1]]
+    #     results = []
+    #     prev_features = lateral_convs[0](x[0])
+    #     results.append(output_convs[0](prev_features))
+    #     for features, lateral_conv, output_conv in zip(
+    #         x[1:], lateral_convs[1:], output_convs[1:]
+    #     ):
+    #         # ONNX opset 9 warns about possibly different implementation of interpolate
+    #         # top_down_features = F.interpolate(prev_features, scale_factor=2, mode="nearest")
+    #         top_down_features = upsample(prev_features)
+    #         lateral_features = lateral_conv(features)
+    #         prev_features = lateral_features + top_down_features
+    #         if fuse_type == "avg":
+    #             prev_features /= 2
+    #         results.insert(0, output_conv(prev_features))
+    #
+    #     if top_block is not None:
+    #         top_block_in_feature = bottom_up_features.get(top_block.in_feature, None)
+    #         if top_block_in_feature is None:
+    #             top_block_in_feature = results[out_features.index(top_block.in_feature)]
+    #         results.extend(top_block(top_block_in_feature))
+    #
+    #     return dict(zip(out_features, results))
+
+
     def forward(x):
         bottom_up_features = bottom_up(x)
         x = [bottom_up_features[f] for f in in_features[::-1]]
-        results = []
-        prev_features = lateral_convs[0](x[0])
-        results.append(output_convs[0](prev_features))
-        for features, lateral_conv, output_conv in zip(
-            x[1:], lateral_convs[1:], output_convs[1:]
-        ):
-            # ONNX opset 9 warns about possibly different implementation of interpolate
-            # top_down_features = F.interpolate(prev_features, scale_factor=2, mode="nearest")
-            top_down_features = upsample(prev_features)
-            lateral_features = lateral_conv(features)
-            prev_features = lateral_features + top_down_features
-            if fuse_type == "avg":
-                prev_features /= 2
-            results.insert(0, output_conv(prev_features))
 
-        if top_block is not None:
-            top_block_in_feature = bottom_up_features.get(top_block.in_feature, None)
-            if top_block_in_feature is None:
-                top_block_in_feature = results[out_features.index(top_block.in_feature)]
-            results.extend(top_block(top_block_in_feature))
+        F5 = lateral_convs[0](x[0])
+        P5 = output_convs[0](F5)
 
-        return dict(zip(out_features, results))
+        F4 = lateral_convs[1](x[1]) + upsample(F5)
+        # P4 = output_convs[1](F4)
+
+        F3 = lateral_convs[2](x[2]) + upsample(F4)
+        # P3 = output_convs[2](F3)
+
+        F2 = lateral_convs[3](x[3]) + upsample(F3)
+        # P2 = output_convs[3](F2)
+
+        # return {
+        #     'p2': P2, 'p3': P3, 'p4': P4, 'p5': P5,
+        #     'p6': F.max_pool2d(P5, kernel_size=1, stride=2, padding=0)
+        # }
+        return {
+            'p2': output_convs[3](F2),
+            'p3': output_convs[2](F3),
+            'p4': output_convs[1](F4),
+            'p5': output_convs[0](F5),
+            'p6': F.max_pool2d(P5, kernel_size=1, stride=2, padding=0)
+        }
 
     return forward
