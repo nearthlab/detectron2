@@ -16,6 +16,18 @@ def functionalizennSequential(module: nn.Sequential):
     return forward
 
 
+@register_functionalizer(nn.ModuleList)
+def functionalizennModuleList(module: nn.ModuleList):
+    layers = [functionalize(m) for m in module]
+
+    def forward(x):
+        for layer in layers:
+            x = layer(x)
+        return x
+
+    return forward
+
+
 @register_functionalizer(nn.Conv2d)
 def functionalizennConv2d(module: nn.Conv2d):
     if module.bias is not None:

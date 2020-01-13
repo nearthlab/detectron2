@@ -9,9 +9,13 @@ import detectron2.onnx.layers
 import detectron2.onnx.nn
 import detectron2.onnx.resnet
 import detectron2.onnx.rpn
+import detectron2.onnx.roi_heads
 import detectron2.onnx.vision
+from detectron2.onnx.rpn_outputs import apply_deltas, predict_proposals
+from detectron2.onnx.roi_heads import predict_boxes, predict_probs
 from detectron2.onnx.functionalize import test_functionalizer, test_equal, get_shapes
 from detectron2.onnx.trt_friendly_module import TRTFriendlyModule, composeTRTFriendlyModule
+from detectron2.utils.file_io import saveTensor, loadTensor
 
 get_depth = lambda L: max(map(get_depth, L))+1 if type(L) in (list, tuple) else 0
 
@@ -38,22 +42,38 @@ def export_onnx(
         onnx.checker.check_model(onnx_model)
         print('ONNX model checked! (IR version: {})'.format(onnx_model.ir_version))
 
+        input_json_path = os.path.join(output_dir, '{}_input.json'.format(model.name))
+        saveTensor(dummy_input, input_json_path)
+
         input_path = os.path.join(output_dir, '{}_input.tensor'.format(model.name))
         if isinstance(dummy_input, dict):
             torch.save([dummy_input.get(key) for key in sorted(dummy_input.keys())], input_path)
+            # if torch.is_tensor(dummy_input):
+            #     with open(input_path, 'wb') as fp:
+            #         fp.write(dummy_input.flatten().numpy())
+            # else:
+            #     torch.save([dummy_input.get(key) for key in sorted(dummy_input.keys())], input_path)
+        elif get_depth(dummy_input) == 2:
+            torch.save([x for y in dummy_input for x in y], input_path)
         else:
             torch.save(dummy_input, input_path)
 
         with open(os.path.join(output_dir, '{}_input.shape'.format(model.name)), 'w') as fp:
+            shapes = get_shapes(dummy_input)
             if isinstance(dummy_input, torch.Tensor):
-                fp.write('{}'.format([get_shapes(dummy_input)]))
+                fp.write('{}'.format([shapes]))
+            elif get_depth(shapes) == 3:
+                fp.write('{}'.format([x for y in shapes for x in y]))
             else:
-                fp.write('{}'.format(get_shapes(dummy_input)))
+                fp.write('{}'.format(shapes))
 
         tic = cv2.getTickCount()
-        dummy_output = model(dummy_input)
+        dummy_output = model(*dummy_input) if isinstance(dummy_input, tuple) else model(dummy_input)
         toc = cv2.getTickCount()
         print('inference time: {}'.format((toc - tic) / cv2.getTickFrequency()))
+
+        output_json_path = os.path.join(output_dir, '{}_output.json'.format(model.name))
+        saveTensor(dummy_output, output_json_path)
 
         output_path = os.path.join(output_dir, '{}_output.tensor'.format(model.name))
         if isinstance(dummy_output, dict):
