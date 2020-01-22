@@ -1,13 +1,12 @@
 import argparse
 import itertools
 import torch
+from detectron2.utils.file_io import loadTensors
 
-def load_tensor(path: str):
-    try:
-        tensors = torch.load(path)
-    except:
-        tensors = torch.jit.load(path)._parameters.values()
-    return [tensor for tensor in tensors if isinstance(tensor, torch.Tensor)]
+
+def print_stat(x: torch.Tensor, name: str):
+    print('{}.max(): {}, {}.min(): {}'.format(name, round(x.max().item(), 4), name, round(x.min().item()), 4))
+    print('{}.mean: {}, {}.stddev: {}'.format(name, round(x.mean().item(), 4), name, round(x.std().item(), 4)))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -16,13 +15,13 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    t1 = load_tensor(args.tensor1)
-    t2 = load_tensor(args.tensor2)
+    t1 = loadTensors(args.tensor1)
+    t2 = loadTensors(args.tensor2)
 
     print('=' * 50)
     for idx, x1, x2 in zip(itertools.count(), t1, t2):
-        x1 = x1.cuda()
-        x2 = x2.cuda()
+        x1 = x1.cuda().float()
+        x2 = x2.cuda().float()
         if x1.shape[0] != 1:
             x1 = x1.unsqueeze(0)
         if x2.shape[0] != 1:
@@ -37,15 +36,11 @@ if __name__ == '__main__':
             std_diff = delta.std()
             cosine_sim = torch.mean(torch.nn.functional.cosine_similarity(x1.flatten(), x2.flatten(), dim=0))
             print('tensor{}: shape={}'.format(idx, x1.shape))
-            print('|x1| = {}, |x2| = {}, |x1 - x2| = {}'.format(round(l1.item(), 4), round(l2.item(), 4), round(ld.item(), 4)))
-            print('x1.max(): {}, x1.min(): {}'.format(x1.max().item(), x1.min().item()))
-            print('x2.max(): {}, x2.min(): {}'.format(x2.max().item(), x2.min().item()))
             print('cosine similarity: {}'.format(round(cosine_sim.item(), 4)))
-            print('x1.mean: {}, x1.stddev: {}'.format(x1.mean().item(), x1.std().item()))
-            print('x2.mean: {}, x2.stddev: {}'.format(x2.mean().item(), x2.std().item()))
-            print('max difference: ', max_diff.item())
-            print('mean difference: ', mean_diff.item())
-            print('stddev difference: ', std_diff.item())
+            print('|x1| = {}, |x2| = {}, |x1 - x2| = {}'.format(round(l1.item(), 4), round(l2.item(), 4), round(ld.item(), 4)))
+            print_stat(x1, 'x1')
+            print_stat(x2, 'x2')
+            print_stat(delta, '|x1 - x2|')
         else:
             print('Shape mismatch: {} != {}'.format(x1.shape, x2.shape))
         print('=' * 50)

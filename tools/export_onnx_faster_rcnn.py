@@ -114,15 +114,14 @@ if __name__ == "__main__":
 
             # read image
             img = read_image(args.input[0])
-            print('original image shape: {}'.format(img.shape))
 
             # the preprocessing implemented in the DefaultPredictor's "__call__" method
             if predictor.input_format == "RGB":
                 img = img[:, :, ::-1]
             height, width = img.shape[:2]
             img = predictor.transform_gen.get_transform(img).apply_image(img)
-            print('resized image shape: {}'.format(img.shape))
             img = torch.as_tensor(img.astype('float32').transpose(2, 0, 1))
+
 
             # unpack major constants
             rpn_weights = cfg.MODEL.RPN.BBOX_REG_WEIGHTS
@@ -134,10 +133,7 @@ if __name__ == "__main__":
 
             # the GeneralizedRCNN's "preprocess_image" method
             images = ImageList.from_tensors([model.normalizer(img.to(model.device))], model.backbone.size_divisibility)
-            print('input shape: {}'.format(images.tensor.shape))
             features = model.backbone(images.tensor)
-            resnet_features = model.backbone.bottom_up(images.tensor)
-            fpn_in_features = [resnet_features[f] for f in model.backbone.in_features[::-1]]
             rpn_in_features = [features[f] for f in model.proposal_generator.in_features]
             anchors = model.proposal_generator.anchor_generator(rpn_in_features)
 
@@ -173,6 +169,9 @@ if __name__ == "__main__":
             roi_heads_in_features = [features[f] for f in roi_heads.in_features]
 
             proposals = [x.proposal_boxes.tensor.unsqueeze(0) for x in proposals]
+            proposals = [torch.constant_pad_nd(x, (0, 0, 0, post_nms_topk - x.shape[1]))
+                         if x.shape[1] < post_nms_topk
+                         else x for x in proposals]
             box_pooler_features = TRTFriendlyModule(roi_heads.box_pooler)(roi_heads_in_features, proposals)
 
             proposal_predictor = lambda x: predict_proposals(anchors, x, rpn_weights)

@@ -2,7 +2,7 @@ import json
 
 import torch
 
-__all__ = ['saveTensor', 'loadTensor']
+__all__ = ['saveTensors', 'loadTensors']
 
 class TensorEncoder(json.JSONEncoder):
     def default(self, tensor: torch.Tensor):
@@ -14,8 +14,6 @@ class TensorEncoder(json.JSONEncoder):
                 'device': str(tensor.device),
                 'requires_grad': tensor.requires_grad
             }
-        # else:
-        #     return super(TensorEncoder, self).default(tensor)
 
 
 class TensorDecoder(json.JSONDecoder):
@@ -45,12 +43,14 @@ class TensorDecoder(json.JSONDecoder):
         return obj
 
 
-def saveTensor(x, path, **kwargs):
+def saveTensors(x, path):
+    if isinstance(x, dict):
+        x = x.values()
     with open(path, 'w') as fp:
-        json.dump(x, fp, cls=TensorEncoder, **kwargs)
+        json.dump(x, fp, cls=TensorEncoder, indent=2)
 
 
-def loadTensor(path):
+def loadTensors(path):
     with open(path, 'r') as fp:
         return json.load(fp, cls=TensorDecoder)
 
@@ -59,5 +59,5 @@ if __name__ == '__main__':
     x = torch.randn(1, 3, 2, 3)
     y = [torch.randn(1, 3, 4, 6), torch.randn(1, 3, 4, 6)]
     data = {'x': x, 'y': y}
-    saveTensor(data, 'data.json', indent=2)
-    z = loadTensor('data.json')
+    saveTensors(data, 'data.json')
+    z = loadTensors('data.json')
