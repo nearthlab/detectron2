@@ -10,7 +10,7 @@ def batched_nms(boxes, scores, idxs, iou_threshold):
     """
     Same as torchvision.ops.boxes.batched_nms, but safer.
     """
-    assert boxes.shape[-1] == 4
+    # assert boxes.shape[-1] == 4
     # TODO may need better strategy.
     # Investigate after having a fully-cuda NMS op.
     if len(boxes) < 40000:
