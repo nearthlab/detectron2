@@ -2,7 +2,7 @@
 
 Our [Colab Notebook](https://colab.research.google.com/drive/16jcaJoc6bCFAQ96jDe2HwtXj7BMD_-m5)
 has step-by-step instructions that install detectron2.
-The [Dockerfile](https://github.com/facebookresearch/detectron2/blob/master/docker/Dockerfile)
+The [Dockerfile](https://github.com/nearthlab/detectron2/blob/master/docker/Dockerfile)
 also installs detectron2 with a few simple commands.
 
 ### Requirements
@@ -20,11 +20,11 @@ also installs detectron2 with a few simple commands.
 
 After having the above dependencies, run:
 ```
-pip install 'git+https://github.com/facebookresearch/detectron2.git'
+pip install 'git+https://github.com/nearthlab/detectron2.git'
 # (add --user if you don't have permission)
 
 # Or, to install it from a local clone:
-git clone https://github.com/facebookresearch/detectron2.git
+git clone https://github.com/nearthlab/detectron2.git
 cd detectron2 && pip install -e .
 
 # Or if you are on macOS
