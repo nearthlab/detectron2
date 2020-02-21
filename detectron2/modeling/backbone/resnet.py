@@ -50,6 +50,58 @@ class ResNetBlockBase(nn.Module):
         return self
 
 
+class BasicBlock(ResNetBlockBase):
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        stride=1,
+        num_groups=1,
+        norm="BN",
+        dilation=1,
+    ):
+        super().__init__(in_channels, out_channels, stride)
+
+        self.conv1 = Conv2d(
+            in_channels,
+            out_channels,
+            kernel_size=3,
+            stride=stride,
+            padding=1 * dilation,
+            bias=False,
+            groups=num_groups,
+            dilation=dilation,
+            norm=get_norm(norm, out_channels),
+        )
+
+        self.conv2 = Conv2d(
+            in_channels,
+            out_channels,
+            kernel_size=3,
+            stride=stride,
+            padding=1 * dilation,
+            bias=False,
+            groups=num_groups,
+            dilation=dilation,
+            norm=get_norm(norm, out_channels),
+        )
+
+        for layer in [self.conv1, self.conv2, self.shortcut]:
+            if layer is not None:  # shortcut can be None
+                weight_init.c2_msra_fill(layer)
+
+    def forward(self, x):
+        identity = x
+
+        out = self.conv1(x)
+        out = self.conv2(out)
+
+        out += identity
+        out = F.relu_(out)
+
+        return out
+
+
 class BottleneckBlock(ResNetBlockBase):
     def __init__(
         self,
@@ -441,7 +493,7 @@ def build_resnet_backbone(cfg, input_shape):
     # fmt: on
     assert res5_dilation in {1, 2}, "res5_dilation cannot be {}.".format(res5_dilation)
 
-    num_blocks_per_stage = {50: [3, 4, 6, 3], 101: [3, 4, 23, 3], 152: [3, 8, 36, 3]}[depth]
+    num_blocks_per_stage = {18: [2, 2, 2, 2], 34: [3, 4, 6, 3], 50: [3, 4, 6, 3], 101: [3, 4, 23, 3], 152: [3, 8, 36, 3]}[depth]
 
     stages = []
 
@@ -468,7 +520,7 @@ def build_resnet_backbone(cfg, input_shape):
             stage_kargs["deform_modulated"] = deform_modulated
             stage_kargs["deform_num_groups"] = deform_num_groups
         else:
-            stage_kargs["block_class"] = BottleneckBlock
+            stage_kargs["block_class"] = BottleneckBlock if depth >= 50 else BasicBlock
         blocks = make_stage(**stage_kargs)
         in_channels = out_channels
         out_channels *= 2
