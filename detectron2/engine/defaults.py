@@ -133,10 +133,14 @@ class DefaultPredictor:
     """
     Create a simple end-to-end predictor with the given config that runs on
     single device for a single input image.
-    The predictor takes an BGR image, resizes it to the specified resolution,
-    runs the model and produces a dict of predictions.
 
-    This predictor takes care of model loading and input preprocessing for you.
+    Compared to using the model directly, this class does the following additions:
+
+    1. Load checkpoint from `cfg.MODEL.WEIGHTS`.
+    2. Always take BGR image as the input and apply conversion defined by `cfg.INPUT.FORMAT`.
+    3. Apply resizing defined by `cfg.INPUT.{MIN,MAX}_SIZE_TEST`.
+    4. Take one input image and produce a single output, instead of a batch.
+
     If you'd like to do anything more fancy, please refer to its source code
     as examples to build and use the model manually.
 
@@ -374,7 +378,10 @@ class DefaultTrainer(SimpleTrainer):
             OrderedDict of results, if evaluation is enabled. Otherwise None.
         """
         super().train(self.start_iter, self.max_iter)
-        if hasattr(self, "_last_eval_results") and comm.is_main_process():
+        if len(self.cfg.TEST.EXPECTED_RESULTS) and comm.is_main_process():
+            assert hasattr(
+                self, "_last_eval_results"
+            ), "No evaluation results obtained during training!"
             verify_results(self.cfg, self._last_eval_results)
             return self._last_eval_results
 
@@ -437,7 +444,7 @@ class DefaultTrainer(SimpleTrainer):
     def build_evaluator(cls, cfg, dataset_name):
         """
         Returns:
-            DatasetEvaluator
+            DatasetEvaluator or None
 
         It is not implemented by default.
         """
