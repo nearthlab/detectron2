@@ -75,7 +75,7 @@ class BasicBlock(ResNetBlockBase):
         )
 
         self.conv2 = Conv2d(
-            in_channels,
+            out_channels,
             out_channels,
             kernel_size=3,
             stride=stride,
