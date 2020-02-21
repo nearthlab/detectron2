@@ -78,7 +78,7 @@ class BasicBlock(ResNetBlockBase):
             in_channels,
             out_channels,
             kernel_size=3,
-            stride=stride,
+            stride=1,
             padding=1 * dilation,
             bias=False,
             groups=num_groups,
@@ -528,15 +528,18 @@ def build_resnet_backbone(cfg, input_shape):
             "norm": norm,
             "dilation": dilation,
         }
-        if depth > 34:
+
+        if depth >= 50:
             stage_kargs["bottleneck_channels"] = bottleneck_channels
             stage_kargs["stride_in_1x1"] = stride_in_1x1
-        if deform_on_per_stage[idx]:
-            stage_kargs["block_class"] = DeformBottleneckBlock
-            stage_kargs["deform_modulated"] = deform_modulated
-            stage_kargs["deform_num_groups"] = deform_num_groups
+            if deform_on_per_stage[idx]:
+                stage_kargs["block_class"] = DeformBottleneckBlock
+                stage_kargs["deform_modulated"] = deform_modulated
+                stage_kargs["deform_num_groups"] = deform_num_groups
+            else:
+                stage_kargs["block_class"] = BottleneckBlock
         else:
-            stage_kargs["block_class"] = BottleneckBlock if depth > 34 else BasicBlock
+            stage_kargs["block_class"] = BasicBlock
         blocks = make_stage(**stage_kargs)
         in_channels = out_channels
         out_channels *= 2
