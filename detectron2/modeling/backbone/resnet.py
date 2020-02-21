@@ -86,9 +86,8 @@ class BasicBlock(ResNetBlockBase):
             norm=get_norm(norm, out_channels),
         )
 
-        for layer in [self.conv1, self.conv2, self.shortcut]:
-            if layer is not None:  # shortcut can be None
-                weight_init.c2_msra_fill(layer)
+        for layer in [self.conv1, self.conv2]:
+            weight_init.c2_msra_fill(layer)
 
     def forward(self, x):
         identity = x
@@ -508,19 +507,20 @@ def build_resnet_backbone(cfg, input_shape):
             "num_blocks": num_blocks_per_stage[idx],
             "first_stride": first_stride,
             "in_channels": in_channels,
-            "bottleneck_channels": bottleneck_channels,
             "out_channels": out_channels,
             "num_groups": num_groups,
             "norm": norm,
-            "stride_in_1x1": stride_in_1x1,
             "dilation": dilation,
         }
+        if depth > 34:
+            stage_kargs["bottleneck_channels"] = bottleneck_channels
+            stage_kargs["stride_in_1x1"] = stride_in_1x1
         if deform_on_per_stage[idx]:
             stage_kargs["block_class"] = DeformBottleneckBlock
             stage_kargs["deform_modulated"] = deform_modulated
             stage_kargs["deform_num_groups"] = deform_num_groups
         else:
-            stage_kargs["block_class"] = BottleneckBlock if depth >= 50 else BasicBlock
+            stage_kargs["block_class"] = BottleneckBlock if depth > 34 else BasicBlock
         blocks = make_stage(**stage_kargs)
         in_channels = out_channels
         out_channels *= 2

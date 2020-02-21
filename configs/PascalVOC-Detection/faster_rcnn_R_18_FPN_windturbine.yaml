@@ -3,6 +3,8 @@ _BASE_: "../Base-RCNN-FPN.yaml"
 MODEL:
   WEIGHTS: "detectron2://ImageNetPretrained/MSRA/R-50.pkl"
   MASK_ON: False
+  BACKBONE:
+    FREEZE_AT: 0
   RESNETS:
     DEPTH: 18
   ROI_HEADS:
