@@ -62,6 +62,18 @@ class BasicBlock(ResNetBlockBase):
     ):
         super().__init__(in_channels, out_channels, stride)
 
+        if in_channels != out_channels:
+            self.shortcut = Conv2d(
+                in_channels,
+                out_channels,
+                kernel_size=1,
+                stride=stride,
+                bias=False,
+                norm=get_norm(norm, out_channels),
+            )
+        else:
+            self.shortcut = None
+
         self.conv1 = Conv2d(
             in_channels,
             out_channels,
@@ -86,16 +98,20 @@ class BasicBlock(ResNetBlockBase):
             norm=get_norm(norm, out_channels),
         )
 
-        for layer in [self.conv1, self.conv2]:
-            weight_init.c2_msra_fill(layer)
+        for layer in [self.conv1, self.conv2, self.shortcut]:
+            if layer is not None:  # shortcut can be None
+                weight_init.c2_msra_fill(layer)
 
     def forward(self, x):
-        identity = x
-
         out = self.conv1(x)
         out = self.conv2(out)
 
-        out += identity
+        if self.shortcut is not None:
+            shortcut = self.shortcut(x)
+        else:
+            shortcut = x
+
+        out += shortcut
         out = F.relu_(out)
 
         return out
