@@ -104,6 +104,8 @@ class BasicBlock(ResNetBlockBase):
 
     def forward(self, x):
         out = self.conv1(x)
+        out = F.relu_(out)
+
         out = self.conv2(out)
 
         if self.shortcut is not None:
