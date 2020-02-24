@@ -1,10 +1,11 @@
 VERSION: 2
 _BASE_: "../Base-RCNN-FPN.yaml"
 MODEL:
-  WEIGHTS: "detectron2://ImageNetPretrained/MSRA/R-50.pkl"
+  BACKBONE:
+    FREEZE_AT: 0
   MASK_ON: False
   RESNETS:
-    DEPTH: 50
+    DEPTH: 34
   ROI_HEADS:
     NUM_CLASSES: 2
   RPN:
@@ -20,6 +21,8 @@ SOLVER:
   STEPS: (12000, 16000)
   MAX_ITER: 18000  # 17.4 epochs
   WARMUP_ITERS: 100
+  BASE_LR: 0.0005
+  IMS_PER_BATCH: 2
 DATALOADER:
   NUM_WORKERS: 0
 TEST:
