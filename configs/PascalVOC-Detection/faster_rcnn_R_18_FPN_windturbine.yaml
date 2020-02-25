@@ -20,8 +20,9 @@ DATASETS:
   TEST: ('pascal_nlab_test',)
 SOLVER:
   STEPS: (12000, 16000)
-  MAX_ITER: 18000  # 17.4 epochs
+  MAX_ITER: 30000  # Training from scratch takes longer to converge
   WARMUP_ITERS: 100
+  BASE_LR: 0.003
 DATALOADER:
   NUM_WORKERS: 0
 TEST:
