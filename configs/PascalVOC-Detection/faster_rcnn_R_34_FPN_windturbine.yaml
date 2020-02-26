@@ -19,8 +19,8 @@ DATASETS:
   TRAIN: ('pascal_nlab_trainval',)
   TEST: ('pascal_nlab_test',)
 SOLVER:
-  STEPS: (12000, 16000)
-  MAX_ITER: 30000  # Training from scratch takes longer to converge
+  STEPS: (24000, 28000)
+  MAX_ITER: 32000  # Training from scratch takes longer to converge
   WARMUP_ITERS: 2000
   BASE_LR: 0.02
 DATALOADER:
